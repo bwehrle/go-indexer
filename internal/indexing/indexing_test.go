@@ -1,25 +1,38 @@
 package indexing
 
 import (
+	"reflect"
 	"testing"
+
+	"github.com/bwehrle/indexer/internal/tokens"
 )
 
 func Test_import(t *testing.T) {
-	i := NewMemIndexer()
-	i.process("Hello, World!", 0, "test")
-	i.process("Hello, World!", 1, "test")
 
-	fileIndex := i.find("world")
-	
-	if _, ok := fileIndex["test"]; !ok {
-		t.Errorf("Expected fileIndex contains 'test' source for 'world'")
+	tests := []struct {
+		name     string
+		text     []string
+		word     string
+		expected TokenLocationIndex[string]
+	}{
+		{
+			name: "Repeated words",
+			text: []string{"Hello, World!", "Hello, World!"},
+			word: "world",
+			expected: TokenLocationIndex[string]{
+				"test": []Location{{0, 6}, {1, 6}},
+			},
+		},
 	}
-	if len(fileIndex["test"]) != 2 {
-		t.Errorf("Expected fileIndex contains 2 pos")
-	}
-	for c, pos := range fileIndex["test"] {
-		if pos.line != c || pos.col != 7 {
-			t.Errorf("Got pos (%d, %d) wanted (%d, 7) for line %d", pos.line, pos.col, c, c)
+
+	for _, tt := range tests {
+		i := NewMemIndexer()
+		for c, line := range tt.text {
+			i.process(line, c, "test", tokens.NewTextTokenizer())
+		}
+		fileIndex := i.find("world")
+		if eq := reflect.DeepEqual(fileIndex, tt.expected); !eq {
+			t.Errorf("Got %+v, wanted %+v", fileIndex, tt.expected)
 		}
 	}
 }

@@ -4,82 +4,51 @@ import (
 	"bufio"
 	"log"
 	"os"
-	"strings"
+
+	"github.com/bwehrle/indexer/internal/tokens"
 )
 
-type pos struct {
+type Token interface {
+	~string
+}
+
+type Location struct {
 	line, col int
 }
 
-type FileIndex map[string][]pos
+type TokenLocationIndex[T Token] map[T][]Location
 
-type indexing interface {
-	process(line string, lineNo int, source string)
-	find(string) FileIndex
+type TokenIndex[T Token] map[T]TokenLocationIndex[T]
+
+type Index[T Token] interface {
+	Process(line string, lineNo int, source string, tokenizer tokens.Tokenizer)
+	Find(T) TokenLocationIndex[T]
 }
 
-var indexer indexing
-
-func ProcessFile(path string) {
-	processFile(path, indexer)
+type FileIndexProcessor[T Token] struct {
+	indexer   Index[T]
+	tokenizer tokens.Tokenizer
 }
 
-func processFile(path string, indexer indexing) {
-	f, err := os.Open(path)
+func NewFileProcessor[T Token](indexer Index[T], tokenizer tokens.Tokenizer) *FileIndexProcessor[T] {
+	return &FileIndexProcessor[T]{indexer, tokenizer}
+}
+
+func (f *FileIndexProcessor[T]) ProcessFile(path string) {
+
+	file, err := os.Open(path)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer f.Close()
-	rd := bufio.NewReader(f)
+	defer file.Close()
+	rd := bufio.NewReader(file)
 	for {
 		var lineNo = 0
 		line, err := rd.ReadString('\n')
 		if err != nil {
 			break
 		}
-		indexer.process(line, lineNo, path)
+		f.indexer.Process(line, lineNo, path, f.tokenizer)
 		lineNo++
 	}
-}
-
-type filePosIndex map[string]FileIndex
-
-type memIndexer struct {
-	index filePosIndex
-}
-
-func NewMemIndexer() *memIndexer {
-	return &memIndexer{index: make(filePosIndex)}
-}
-
-func (m *memIndexer) process(line string, lineNo int, source string) {
-	col := 0
-	for _, token := range strings.Split(line, " ") {
-		if strings.ContainsAny(token, "&-+=%*^~|<>") {
-			continue
-		}
-
-		entry := strings.ToLower(strings.Trim(token, "\"':;.,!?-()\n"))
-
-		if srcMap, ok := m.index[entry]; ok {
-			if _, ok := srcMap[source]; ok {
-				srcMap[source] = append(m.index[entry][source], pos{line: lineNo, col: col})
-			} else {
-				m.index[entry][source] = []pos{
-					{line: lineNo, col: col},
-				}
-			}
-		} else {
-				m.index[entry] = map[string][]pos {
-					source: {
-						{line: lineNo, col: col},
-					},
-				}
-		}
-		col += len(token) + 1
-	}
-}
-
-func (m *memIndexer) find(word string) FileIndex {
-	return m.index[word]
 }
